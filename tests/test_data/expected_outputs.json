@@ -1,0 +1,68 @@
+{
+  "cleat_angle": [
+    {
+      "shear_yielding_capacity": 90.54,
+      "block_shear_capacity": 101.36,
+      "designation": "50x50x3",
+      "bolt_rows_supported_leg": 2,
+      "bolt_columns_supported_leg": 1
+    },
+    {
+      "shear_yielding_capacity": 136.46,
+      "block_shear_capacity": 124.08,
+      "designation": "60x60x4"
+    },
+    {
+      "shear_yielding_capacity": 314.92,
+      "block_shear_capacity": 353.61,
+      "bolt_rows_supported_leg": 7,
+      "bolt_columns_supported_leg": 2
+    },
+    {
+      "shear_yielding_capacity": 118.09,
+      "block_shear_capacity": 125.77,
+      "bolt_rows_supported_leg": 3,
+      "bolt_columns_supported_leg": 1
+    }
+  ],
+  "fin_plate": [
+    {
+      "shear_capacity": 17.58,
+      "bolt_rows": 2,
+      "bolt_columns": 1,
+      "plate_thickness": 8
+    },
+    {
+      "shear_capacity": 6.39
+    },
+    {
+      "shear_capacity": 42.49
+    },
+    {
+      "shear_capacity": 15.21,
+      "bolt_rows": 3,
+      "bolt_columns": 2,
+      "plate_thickness": 16
+    }
+  ],
+  "tension_welded": [
+    {
+      "tension_yielding_capacity": 17.1,
+      "tension_rupture_capacity": 22.35,
+      "designation": "20x20x3"
+    },
+    {
+      "tension_yielding_capacity": 79.09,
+      "tension_rupture_capacity": 100.72
+    },
+    {
+      "tension_yielding_capacity": 79.09,
+      "tension_rupture_capacity": 100.72
+    },
+    {
+      "tension_yielding_capacity": 111.15,
+      "tension_rupture_capacity": 136.12,
+      "designation": "JC100"
+    }
+  ]
+}
