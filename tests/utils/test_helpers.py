@@ -1,4 +1,6 @@
 import sys
+import os
+import shutil
 import subprocess
 import re
 from pathlib import Path
@@ -65,40 +67,66 @@ def parse_osdag_output(output_text: str) -> dict:
 
     return final_data
 
+
 def run_osdag_module(osdag_path: Path, input_file_path: Path) -> dict:
     """
-    Runs the Osdag Command_line.py script with a specific input file.
+    Runs Osdag by copying the input file to the expected directory, 
+    running the engine, and reading the output file.
     """
     
-    # Path to the Command_line.py script in the new repo structure
-    # It lives in src/osdag/Command_line.py
-    command_line_script = osdag_path / "src" / "osdag" / "Command_line.py"
-
-    # The command to run: python src/osdag/Command_line.py --input <file>
+    # 1. Define Paths based on Osdag's hardcoded logic
+    osdag_src = osdag_path / "src" / "osdag"
+    input_dir = osdag_src / "ResourceFiles" / "design_example"
+    output_dir = osdag_src / "OUTPUT_FILES" / "Command_line_output"
+    
+    # Ensure directories exist
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 2. Copy our test input file to the "design_example" folder
+    temp_input_path = input_dir / input_file_path.name
+    shutil.copy(input_file_path, temp_input_path)
+    
+    # 3. Run Command_line.py as a module (to fix imports)
+    # We don't pass --input because it doesn't use it!
     command = [
         sys.executable,
-        str(command_line_script),
-        "--input", str(input_file_path)
+        "-m", "osdag.Command_line"
     ]
 
-    # Run the command
     result = subprocess.run(
         command,
-        cwd=str(osdag_path),  # Run from the root of the repo
+        cwd=str(osdag_path),
         capture_output=True,
         text=True,
         check=False,
-        env={"PYTHONPATH": str(osdag_path / "src")} # Ensure it finds the modules
+        env={"PYTHONPATH": str(osdag_path / "src")}
     )
 
-    if result.returncode != 0:
-        print(f"Error running Osdag for input file: {input_file_path.name}")
+    # 4. Find the output file
+    # Osdag saves it as <filename>.txt in the output directory
+    output_filename = input_file_path.stem + ".txt" # e.g. FinPlateTest1.txt
+    output_file_path = output_dir / output_filename
+    
+    parsed_data = {}
+    
+    if output_file_path.exists():
+        # Read the file content
+        output_content = output_file_path.read_text()
+        parsed_data = parse_osdag_output(output_content)
+        
+        # Cleanup output file
+        output_file_path.unlink()
+    else:
+        print(f"Error: Output file not found at {output_file_path}")
+        print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
-        return {}
 
-    # Parse the output
-    return parse_osdag_output(result.stdout)
-
+    # 5. Cleanup input file
+    if temp_input_path.exists():
+        temp_input_path.unlink()
+        
+    return parsed_data
 def assert_approximately_equal(actual, expected, tol=0.01):
     if actual is None:
         # Don't crash, just fail the test gracefully
