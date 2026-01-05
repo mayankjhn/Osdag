@@ -1,0 +1,131 @@
+[33m48e5c925[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32madd-tests[m[33m, [m[1;31morigin/add-tests[m[33m)[m Migrate tests to test branch structure and fix import paths
+[33mc0adf511[m added
+[33mc8314108[m Fixed Osdag Icon Visibility
+[33m79cdd66a[m Merged #106 (harshan0416)
+[33m570beaf4[m[33m ([m[1;31mupstream/test_old[m[33m)[m Issue Fixed #105
+[33mf3ddb074[m Updated comments
+[33m4cfdd52f[m Design report of Plate Girder Module
+[33m90fdff75[m Updated Navbar Icons
+[33md11316e7[m implemented cad flushing with a 150ms delay to prevent heap corruption and crashing
+[33m78852f11[m fixed memory leaker and fin plate crash
+[33m11e620cd[m integrated multiprocessing and environment safety to the original entry point
+[33m8edc6ad7[m removed duplicate view_cube code lines
+[33md73d8be0[m temporarily parked butt_joint_welded model
+[33m49b90df3[m Fixed bolt nut fusion in bolted lap joint module
+[33m13040931[m Fixed Butt Joint Bolted Cad Varied Thickness in plate issue
+[33m7356f591[m Increased Chamfer Size in View Cube
+[33m13930e11[m Re-Positioned zo and zi btns, increased text size of zo and zo btn, increased sensitivity to corner chamfer of cube
+[33m6a30ec6a[m Fixed the Model visibility
+[33mf73037d0[m Resolved model visibility
+[33mfe2fb0d0[m Fixed View Cube flicker issue
+[33mc26f65b4[m integrated lap joint welded
+[33m59e452a4[m fixed fin plate capacit details
+[33madb43be0[m fixed toggle issue
+[33md3b38beb[m fixed toggle issue
+[33m8085933f[m Fixed Cad hover, Render Issue & hide 3dComp
+[33m05592e62[m fin plate cad issue fixed
+[33md629ca99[m Fixed BBE MODULE entirely #59 fixed
+[33m7108aab8[m Fixed the application crashing issue of BBEPlate module
+[33mc797f883[m Issue #64 fixed
+[33mb4f59aea[m Issue #66 fixed
+[33mc8c6e6ef[m issue #35 fixed
+[33m9919594d[m added cross-platform support for new UI
+[33ma91f973a[m fixes applied for validation error
+[33m235ce4a4[m fixed the validation error
+[33mbe4ae14e[m fixed butt joined bolted
+[33ma7cd9538[m Fixed Label disalignment Issue
+[33mc53e3010[m Fixed Label disalignment Issue
+[33ma2f54431[m Increased dimentions for View Cube at corners
+[33m2dd15746[m Fixed Updating of Output Fields
+[33md029d372[m Merged & Fixed PG by nishikantmandal007
+[33mf88a0636[m Renamed, structured connector & Resolved Issue #93
+[33mbe7622f2[m Fixing some missing self fix
+[33mfbf3f1c6[m Added PointingHand on output btn & fixed hover icon
+[33m91e0b551[m General fix of splash animation to all OS #70
+[33mbf67c454[m Grey disabled input in additional inputs Fix Cursor to be responsive and update according to widget
+[33mec3c9345[m Adding missing recent module connector functions
+[33mad50a394[m Renamed Struts in Trusses
+[33me2df2c3f[m - Fixed InputDock callback signatures to prevent argument mismatch crashes - Corrected hover dictionary handling across CAD modules - Stabilized Design action to avoid UI and OCC runtime crashes
+[33m24628a8b[m Fixed log issues for failed designs
+[33m20ec123b[m Minor Ui fixes in input dock lock
+[33mc84e8e13[m Minor Ui fix
+[33m454d7364[m Make Input Dock lock state more visible
+[33m72015cb8[m -Lock feature added in input_dock
+[33m4093cd6e[m -Reduced the theme toggle delay by Pre-Rendering qss -Made the template_page animation faster
+[33m3869e479[m -Reduced the theme toggle delay by Pre-Rendering qss -Made the template_page animation faster
+[33m49def476[m Made Color Of UnderDev Navbar button to Grey
+[33me3381f83[m -Compressed Module calling function -Enhanced Cleanup Function
+[33m8537a820[m fix: Fixed how the models look
+[33m47753f55[m Fix: flexural member and cantilever hover logic
+[33medaecf7f[m Refactored Simply Supported and Cantilever + Main window updates
+[33m598f9314[m Fixed report issue in welded butt joint
+[33m621ea0a0[m Report generation of bolted lap joint
+[33maf25e833[m Name Change - Flexural member
+[33m4480d381[m Flexural Members - Purlins Refactored
+[33m398b8162[m Additional issue Resolved #issue - 64 and  some other changes
+[33m950c8bb6[m issue #49 fixed
+[33m20246bd3[m issue #52 fixed
+[33m5c71e624[m Fixed Issue #38
+[33mb409d774[m Fixed Issue #41
+[33m43cb32f6[m Fixed Issue #44
+[33mef81fb85[m Fixed Issue #45
+[33m63badd02[m Resolved Issue #48
+[33m27cdfd48[m Fixed Issue #77
+[33me68da8e5[m Issue Fixed #50
+[33ma19fbe37[m Issue Fixed #54
+[33m878a1152[m Fixed svg on Card for Column
+[33m43df1137[m Fixed Issue #60
+[33m461daf4d[m Fixed Issue #62
+[33mb4310626[m Fixed toggle_lock
+[33m6ca5a803[m Merge branch 'test' of https://github.com/mhsuhail00/Osdag into test
+[33m363187fa[m Fixed #74
+[33mc9849ab6[m Fixes #56
+[33m04248445[m Fixed #64
+[33m7658294a[m Lock additional inputs dialog Issue #51
+[33mec4820ee[m Fixed Missing connector function
+[33m7657a1a4[m -Reduced redundant code for module calling in main_window
+[33m59178558[m -Splash will be closed on double click -Flushed cad model on unlock -Removed init database print statements -Fixed toggle buttons Problems -Fixed pointingHand issue on template page
+[33m7138188e[m Minor Ui fixes in input dock lock
+[33mc64dc80d[m Add input dock unlock clears output dock feature
+[33m81c41eb1[m Fix validation msg box error
+[33m843087d4[m Comment out unneccessary print statements
+[33m7ad56b5d[m Minor Ui fix
+[33m00957890[m Resize HomePage icons
+[33mf42dfe58[m Change under-developement modules visibility in menu bar
+[33m977ecaf8[m Make Input Dock lock state more visible
+[33m7e368792[m -Lock feature added in input_dock
+[33md372907e[m -Reduced the theme toggle delay by Pre-Rendering qss -Made the template_page animation faster
+[33m2a34ae5f[m -Reduced the theme toggle delay by Pre-Rendering qss -Made the template_page animation faster
+[33m1c235204[m Fixed styles inconsistency in dark mode
+[33mae38dde2[m Added INSDAG logo in home_widget
+[33m60f1a30b[m Made Color Of UnderDev Navbar button to Grey
+[33m0e9be530[m Updated default save directory to Documents/
+[33mb911bb29[m -Compressed Module calling function -Enhanced Cleanup Function
+[33m03bda350[m -Updated bolt and wed color -Updated tooltip size
+[33m414b2da8[m Removed the looping animation on splash screen
+[33m6eee53b5[m minor fixes
+[33m00b3b055[m collective bolt hightlight while hovering
+[33m4b701349[m made the following changes, 1)spacing details 2)zoom in and zoom out buttons 3) axis fix 4)viewer cube highlight
+[33mafbe4787[m added struts in Trusses compression member module in osdag_core
+[33mac5d3d30[m Added struts in trusses module
+[33mf9d0c0fd[m feat: Added welded/gusset plate connection support to compression member module
+[33m78b0fc68[m Added weld/gusset plate details and changed compression struts name
+[33m2890139e[m Fix: Hover-label & checkbox for column cover plate, cover plate weld, and column end plate
+[33m4bec4eb3[m Fix: CAD hover labels & component rendering for BB/CC cover plate + end plate connections
+[33m0887c7c2[m Fix: Added UI support for Column-to-Column Moment Connection modules
+[33m3b09377c[m Fix: Beam-to-Beam Cover Plate Bolted, Beam-to-Beam Cover Plate Welded and Beam-to-Beam End Plate Moment Connection (CAD + UI Integration)
+[33m868fe6c1[m Fix: Added Column CAD integration + output dock and capacity UI updates
+[33md759b0ad[m Update pyproject.toml for osdag_gui
+[33mf4deb059[m Set default folder for cli outputs
+[33m054d2ac5[m Delete src/report.aux
+[33md7ea8526[m Simple Connections Refactored
+[33m87527072[m Merge branch 'pr-418' into osdag-refactored-v2025.01.a.2 Merge PR-418 into osdag-refactored-v2025.01.a.2
+[33mc844c24b[m Tension Welded Refactored
+[33m6508cbea[m Update pyproject.toml for osdag_gui
+[33mc89151a2[m feat: Bolt Spacing modal for Tension Bolted module and other changes.
+[33m7ace4c59[m fix: Fix 3D model generation for Tension Bolted member.
+[33m68525b71[m refactor: Refactored code for Tension Member Bolted.
+[33m8f39b59b[m Commented print statements for plate-girder in is800_2007.py
+[33m8419596b[m Merged and Refactored corrected calculation for plate-girder
+[33m94f7d3f0[m Fixed floating-navbar & bounds button style for both mode
+[33m82956ac6[m Connect

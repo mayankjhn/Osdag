@@ -2,10 +2,10 @@ import pytest
 from utils.test_helpers import run_osdag_module, assert_approximately_equal
 
 FIN_PLATE_TEST_CASES = [
-    ("FinPlateTest1", 0),
-    ("FinPlateTest2", 1),
-    ("FinPlateTest3", 2),
-    ("FinPlateTest4", 3),
+    ("FinPlateTest1.osi", 0),
+    ("FinPlateTest2.osi", 1),
+    ("FinPlateTest3.osi", 2),
+    ("FinPlateTest4.osi", 3),
 ]
 
 @pytest.mark.fin_plate

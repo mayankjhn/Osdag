@@ -2,10 +2,10 @@ import pytest
 from utils.test_helpers import run_osdag_module, assert_approximately_equal
 
 TENSION_MEMBER_TEST_CASES = [
-    ("TensionWeldedTest1", 0),
-    ("TensionWeldedTest2", 1),
-    ("TensionWeldedTest3", 2),
-    ("TensionWeldedTest4", 3),
+    ("TensionWeldedTest1.osi", 0),
+    ("TensionWeldedTest2.osi", 1),
+    ("TensionWeldedTest3.osi", 2),
+    ("TensionWeldedTest4.osi", 3),
 ]
 
 @pytest.mark.tension_welded

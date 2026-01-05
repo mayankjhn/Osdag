@@ -2,10 +2,10 @@ import pytest
 from utils.test_helpers import run_osdag_module, assert_approximately_equal
 
 CLEAT_ANGLE_TEST_CASES = [
-    ("CleatAngleTest1", 0),
-    ("CleatAngleTest2", 1),
-    ("CleatAngleTest3", 2),
-    ("CleatAngleTest4", 3),
+    ("CleatAngleTest1.osi", 0),
+    ("CleatAngleTest2.osi", 1),
+    ("CleatAngleTest3.osi", 2),
+    ("CleatAngleTest4.osi", 3),
 ]
 
 @pytest.mark.cleat_angle
