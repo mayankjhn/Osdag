@@ -38,15 +38,17 @@ from osdag_core.design_type.connection.lap_joint_welded import LapJointWelded
 from osdag_core.design_type.connection.lap_joint_bolted import LapJointBolted
 from osdag_core.design_type.connection.butt_joint_bolted import ButtJointBolted
 from osdag_core.design_type.connection.butt_joint_welded import ButtJointWelded
-from osdag_core.design_type.compression_member.compression import Compression
+from osdag_core.design_type.compression_member.compression_welded import Compression_welded
+from osdag_core.design_type.compression_member.compression_bolted import Compression_bolted
 from osdag_core.design_type.plate_girder.weldedPlateGirder import PlateGirderWelded
-from osdag_core.design_type.compression_member.Column import ColumnDesign
+from osdag_core.design_type.compression_member.compression_column import ColumnDesign
 from osdag_core.design_type.connection.beam_cover_plate_weld import BeamCoverPlateWeld
 from osdag_core.design_type.connection.beam_cover_plate import BeamCoverPlate
 from osdag_core.design_type.connection.beam_beam_end_plate_splice import BeamBeamEndPlateSplice
 from osdag_core.design_type.connection.column_end_plate import ColumnEndPlate
 from osdag_core.design_type.connection.column_cover_plate import ColumnCoverPlate
 from osdag_core.design_type.connection.column_cover_plate_weld import ColumnCoverPlateWeld
+from osdag_core.design_type.connection.base_plate_connection import BasePlateConnection
 from osdag_core.design_type.flexural_member.flexure import Flexure
 from osdag_core.design_type.flexural_member.flexure_purlin import Flexure_Purlin
 from osdag_core.design_type.flexural_member.flexure_cantilever import Flexure_Cantilever
@@ -54,6 +56,65 @@ from osdag_core.design_type.flexural_member.flexure_cantilever import Flexure_Ca
 import openpyxl
 
 class MainWindow(QMainWindow):
+    # RATE-LIMITED OCC DELETION: Limit concurrent viewers to prevent OpenGL corruption
+    # When graveyard gets full, we BLOCK and cleanup before creating new viewer
+    _occ_viewer_graveyard = []
+    _MAX_CONCURRENT_VIEWERS = 2  # Max old viewers in graveyard at once
+    
+    @classmethod
+    def _flush_oldest_viewer(cls):
+        """Immediately delete the oldest viewer from graveyard."""
+        import gc
+        
+        if not cls._occ_viewer_graveyard:
+            return
+        
+        widget = cls._occ_viewer_graveyard.pop(0)  # Remove oldest
+        
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+        
+        try:
+            # Just queue for deletion - don't call OCC methods here
+            # as the object might already be in a corrupted state
+            widget.deleteLater()
+            # DON'T call processEvents() - it causes OpenGL race conditions
+            
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+    
+    @classmethod
+    def _ensure_graveyard_space(cls):
+        """Ensure graveyard has space for a new viewer, flushing oldest if needed."""
+        while len(cls._occ_viewer_graveyard) >= cls._MAX_CONCURRENT_VIEWERS:
+            cls._flush_oldest_viewer()
+    
+    @classmethod
+    def _schedule_safe_deletion(cls, widget):
+        """Schedule safe deletion of CAD widget after new viewer is stable."""
+        import gc
+        
+        def do_safe_delete():
+            try:
+                if widget in cls._occ_viewer_graveyard:
+                    cls._occ_viewer_graveyard.remove(widget)
+                
+                gc_was_enabled = gc.isenabled()
+                gc.disable()
+                
+                try:
+                    widget.deleteLater()
+                finally:
+                    if gc_was_enabled:
+                        gc.enable()
+                        
+            except Exception as e:
+                print(f"[WARNING] Safe deletion error: {e}")
+        
+        # Schedule deletion after 5 seconds (more time for OpenGL to settle)
+        QTimer.singleShot(5000, do_safe_delete)
+    
     def __init__(self):
         super().__init__()
         self.main_widget_instance = None
@@ -93,6 +154,9 @@ class MainWindow(QMainWindow):
         # Using QTimer to delay maximizing until after the window is fully initialized
         # Before maximizing, so that when we click on Restore it comes to normal state.
         QTimer.singleShot(0, self.showMaximized)
+
+        # Ensure correct deletion on close
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
 
 
     def init_ui(self):
@@ -376,6 +440,25 @@ class MainWindow(QMainWindow):
                             except:
                                 pass
                     
+                    # RATE-LIMITED DELETION: Ensure graveyard has space before adding
+                    if hasattr(widget, 'cad_widget') and widget.cad_widget:
+                        # Ensure we don't have too many concurrent viewers
+                        MainWindow._ensure_graveyard_space()
+                        
+                        # Clear displayed shapes
+                        try:
+                            widget.cad_widget.cleanup_for_new_model()
+                            if hasattr(widget.cad_widget, '_display') and widget.cad_widget._display:
+                                widget.cad_widget._display.EraseAll()
+                        except Exception as e:
+                            print(f"[WARNING] CAD cleanup error: {e}")
+                        
+                        # Archive and schedule delayed deletion
+                        widget.setParent(None)
+                        MainWindow._occ_viewer_graveyard.append(widget)
+                        MainWindow._schedule_safe_deletion(widget)
+                        continue  # Skip immediate deleteLater
+
                     widget.setParent(None)
                     widget.deleteLater()
                 except (RuntimeError, TypeError):
@@ -413,9 +496,17 @@ class MainWindow(QMainWindow):
         """Close tab with comprehensive cleanup."""
         widget = self.tab_widget.widget(index)
         
-        # print(f"\n@Before cleanup - Total Widgets: {len(QApplication.allWidgets())}")
-        
         template_instance = self._get_template_instance(index)
+        
+        # Get module name for debug logging
+        module_name = "Unknown"
+        if template_instance and hasattr(template_instance, 'backend') and template_instance.backend:
+            try:
+                module_name = template_instance.backend.module_name()
+            except Exception:
+                pass
+        
+        print(f"[TAB CLOSE] Closing tab index {index}: '{module_name}'")
         
         if template_instance:
             try:
@@ -424,48 +515,71 @@ class MainWindow(QMainWindow):
                 template_instance.blockSignals(True)
                 template_instance.hide()
                 
-                # Find and clean all scroll areas first (they create the container widgets)
-                from PySide6.QtWidgets import QScrollArea
-                scroll_areas = template_instance.findChildren(QScrollArea)
-                for scroll_area in scroll_areas:
-                    self._cleanup_scroll_area(scroll_area)
+                # Check if this template has a CAD widget
+                has_cad_widget = hasattr(template_instance, 'cad_widget') and template_instance.cad_widget
                 
-                # Recursively delete all children
-                self.delete_all_children(template_instance)
-                
-                # Finally delete the template instance itself
-                template_instance.setParent(None)
-                template_instance.deleteLater()
+                if has_cad_widget:
+                    # RATE-LIMITED DELETION: Ensure graveyard has space
+                    MainWindow._ensure_graveyard_space()
+                    
+                    try:
+                        template_instance.cad_widget.cleanup_for_new_model()
+                        if hasattr(template_instance.cad_widget, '_display') and template_instance.cad_widget._display:
+                            template_instance.cad_widget._display.EraseAll()
+                    except Exception as e:
+                        print(f"[WARNING] CAD cleanup error: {e}")
+                    
+                    # Archive and schedule delayed deletion
+                    template_instance.setParent(None)
+                    MainWindow._occ_viewer_graveyard.append(template_instance)
+                    MainWindow._schedule_safe_deletion(template_instance)
+                else:
+                    # For non-CAD templates, use the aggressive cleanup
+                    from PySide6.QtWidgets import QScrollArea
+                    scroll_areas = template_instance.findChildren(QScrollArea)
+                    for scroll_area in scroll_areas:
+                        self._cleanup_scroll_area(scroll_area)
+                    
+                    self.delete_all_children(template_instance)
+                    template_instance.setParent(None)
+                    template_instance.deleteLater()
                         
             except (RuntimeError, AttributeError) as e:
                 print(f"[ERROR] Error in pre-cleanup: {e}")
         
-        # Remove from UI structures
+        # Remove from UI structures first
         self.tab_widget.removeTab(index)
         self.tab_bar.removeTab(index)
         self.tab_widget_content.pop(index)
         
+        # For CAD widgets, we ONLY call deleteLater without setParent(None)
+        # The gdb backtrace showed crash in QWidget::setParent -> inheritStyle -> free()
+        # removeTab() already handles the tab widget, deleteLater handles cleanup
         if widget:
-            widget.setParent(None)
             widget.deleteLater()
         
         self._synchronize_tab_widget()
         
-        # Force immediate processing of deferred deletions
-        QApplication.processEvents()
+        # NOTE: DO NOT call processEvents() here!
+        # It forces immediate deletion while OCC resources may still be in use,
+        # causing heap corruption. Let Qt handle deletions naturally in the event loop.
         
-        # Force garbage collection
-        import gc
-        gc.collect()
+        # NOTE: Do NOT call gc.collect() here!
+        # The gdb backtrace shows the crash happens during GC when it tries to 
+        # clean up Shiboken MetaObjectBuilder objects. The Qt/OCC objects need
+        # more event loop cycles to fully release before GC can safely run.
+        # Let Python's natural GC handle cleanup instead.
         
-        # print(f"@After cleanup - Total Widgets: {len(QApplication.allWidgets())}\n")
+        print(f"[TAB CLOSE] Tab '{module_name}' closed successfully. @Total widgets: {len(QApplication.allWidgets())}")
     
     def delete_all_children(self, widget):
             """
             Recursively delete all child widgets of the given widget.
             Traverses depth-first, deleting only QWidget children on the way back up.
+            Skips CustomViewer3d to prevent OCC heap corruption.
             """
             from PySide6.QtWidgets import QWidget
+            from osdag_gui.ui.components.custom_3dviewer import CustomViewer3d
             
             # Get all immediate children
             children = widget.children()
@@ -474,6 +588,11 @@ class MainWindow(QMainWindow):
             for child in children:
                 # Only process QWidget instances
                 if isinstance(child, QWidget):
+                    # Skip CustomViewer3d - deleteLater on it corrupts OCC heap
+                    # It will be deleted when parent is deleted
+                    if isinstance(child, CustomViewer3d):
+                        continue
+                    
                     # First, recursively delete this child's children
                     self.delete_all_children(child)
                     
@@ -592,6 +711,8 @@ class MainWindow(QMainWindow):
             self.open_column_design_compress_member()
         elif card_title == "Struts Welded to End Gusset":
             self.open_struts_weld_end_gusset_compress_member()
+        elif card_title == "Struts Bolted to End Gusset":
+            self.open_struts_bolted_end_gusset_compress_member()
 
         #----------Flexure-Member--------------
         elif card_title == "Simply Supported Beam":
@@ -602,6 +723,11 @@ class MainWindow(QMainWindow):
             self.open_plate_girder_flexure()
         elif card_title == "Purlin":
             self.open_purlin_flexure()
+
+        #---------Base Plate Connection------------------
+        elif card_title == "Base Plate Connection":
+            self.open_base_plate_conn()
+
 
     #-------------Functions-to-load-modules-in-Tabwidget-START---------------------------
 
@@ -707,7 +833,10 @@ class MainWindow(QMainWindow):
 
     # 19-Struts-welded-to-end-gusset-compression-member
     def open_struts_weld_end_gusset_compress_member(self):
-        self.common_open_module(Compression, "Struts: Welded to End Gusset")
+        self.common_open_module(Compression_welded, "Struts: Welded to End Gusset")
+
+    def open_struts_bolted_end_gusset_compress_member(self):
+        self.common_open_module(Compression_bolted, "Struts: Bolted to End Gusset")
 
     # 20-Simply-Supported-Beam-Flexure-member
     def open_simply_supported_beam_flexure(self):
@@ -724,6 +853,10 @@ class MainWindow(QMainWindow):
     # 23-Flexure-purlin
     def open_purlin_flexure(self):
         self.common_open_module(Flexure_Purlin, "Purlin")
+
+    # 24-Base-Plate-connection
+    def open_base_plate_conn(self):
+        self.common_open_module(BasePlateConnection, "Base Plate Connection")
 
     def open_home_page(self, module):
         self.clear_layout(self.main_widget_layout)
@@ -899,19 +1032,25 @@ class MainWindow(QMainWindow):
                 dialogType=MessageBoxType.Information
             ).exec()
             return
+    def closeEvent(self, event):
+        """Explicitly schedule deletion on close."""
+        self.delete_all_children(self)
+        event.accept()
+        self.deleteLater()
+
     #----------------------------Download-Database/Excel--END----------------------------------------
 
-if __name__ == "__main__":
-    import sys, os
-    from osdag_gui.ui.utils.theme_manager import ThemeManager
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from PySide6.QtWidgets import QApplication
-    app = QApplication(sys.argv)
-    app.theme_manager = ThemeManager(app)
-    app.setStyle("Fusion")
-    main_window = MainWindow()
-    main_window.show()
-    sys.exit(app.exec())
+# if __name__ == "__main__":
+#     import sys, os
+#     from osdag_gui.ui.utils.theme_manager import ThemeManager
+#     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+#     from PySide6.QtWidgets import QApplication
+#     app = QApplication(sys.argv)
+#     app.theme_manager = ThemeManager(app)
+#     app.setStyle("Fusion")
+#     main_window = MainWindow()
+#     main_window.show()
+#     sys.exit(app.exec())
     
     
     

@@ -241,6 +241,7 @@ class InputDock(QWidget):
                 right.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 cur_box_form.addRow(left, left_aligned_widget(right))
             
+            # For Some Compression Member Images
             elif type == TYPE_IMAGE_COMPRESSION:
                 left = ""
                 right = QLabel()
@@ -266,6 +267,20 @@ class InputDock(QWidget):
                 if field[5] != 'No Validator':
                     right.setValidator(self.get_validator(field[5]))
                 cur_box_form.addRow(left, right_aligned_widget(right))
+            
+            # For Base Plate
+            elif type == TYPE_NOTE:
+                left = QLabel(label)
+                left.setObjectName(field[0] + "_label")
+                left.setMinimumWidth(label_width)
+
+                right = QLineEdit()
+                right.setText(field[3])
+                right.setMinimumWidth(input_width)
+                right.setObjectName(field[0] + "_note")
+                right.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                right.setDisabled(True)
+                cur_box_form.addRow(left, left_aligned_widget(right))
             
             if index == len(field_list):
                 # Last Data tupple
@@ -346,6 +361,16 @@ class InputDock(QWidget):
                     key_changed = self.input_widget.findChild(QWidget, key_name)
                     self.on_change_connect(key_changed, updated_list, self.data, self.backend)                    
                     # print(f"[INFO] key_name{key_name} \n key_changed{key_changed}  \n self.on_change_connect ")
+            
+            # Trigger initial visibility update for all connected keys
+            triggered_keys = set()
+            for t in updated_list:
+                for key_name in t[0]:
+                    if key_name not in triggered_keys:
+                        key_changed = self.input_widget.findChild(QWidget, key_name)
+                        if key_changed is not None:
+                            self.change(key_changed, updated_list, self.data, self.backend)
+                            triggered_keys.add(key_name)
 
         panel_layout.addWidget(self.scroll_area)
 
@@ -530,7 +555,7 @@ class InputDock(QWidget):
         """
         if disabled_values is None:
             disabled_values = []
-        self.window = QDialog()
+        self.window = QDialog(self)
         self.ui = CustomValueSelectPopup()
         self.ui.setupUi(self.window, disabled_values, note)
         self.ui.addAvailableItems(op, KEYEXISTING_CUSTOMIZED)
@@ -558,6 +583,9 @@ class InputDock(QWidget):
             if typ == TYPE_NOTE:
                 k2_key = k2_key + "_note"
             if typ in [TYPE_OUT_DOCK, TYPE_OUT_LABEL]:
+                # Skip if output_dock doesn't exist yet (during initial build)
+                if not hasattr(self.parent, 'output_dock') or self.parent.output_dock is None:
+                    continue
                 k2 = self.parent.output_dock.output_widget.findChild(QWidget, k2_key)
             elif typ == TYPE_WARNING:
                 k2 = str(k2_key)
@@ -601,12 +629,32 @@ class InputDock(QWidget):
 
             elif typ == TYPE_LABEL:
                 # print("\n\n[INFO] Label")
-                k2.setText(val)
+                # Handle boolean values for visibility control
+                if isinstance(val, bool):
+                    if val:
+                        k2.setVisible(True)
+                        # Also show/hide the corresponding input widget
+                        input_widget_key = k2_key.replace("_label", "")
+                        input_widget = self.input_widget.findChild(QWidget, input_widget_key)
+                        if input_widget:
+                            input_widget.setVisible(True)
+                    else:
+                        k2.setVisible(False)
+                        # Also show/hide the corresponding input widget
+                        input_widget_key = k2_key.replace("_label", "")
+                        input_widget = self.input_widget.findChild(QWidget, input_widget_key)
+                        if input_widget:
+                            input_widget.setVisible(False)
+                else:
+                    k2.setText(val)
             elif typ == TYPE_NOTE:
                 # print("\n\n[INFO] Note")
                 k2.setText(val)
             elif typ == TYPE_IMAGE:
                 # print("\n\n[INFO] Img")
+                if val is None:
+                    # To handle NoneType error
+                    continue
                 pixmap1 = QPixmap(val)
                 k2.setPixmap(pixmap1)
 
@@ -737,7 +785,7 @@ class InputDock(QWidget):
         elif name == KEY_BOTTOM_Bflange_PG:
             bounds = self.backend.bounds_map.get('bf_bot')
 
-        dialog = BoundsSelectorDialog(name.replace(".", " ") , default=[bounds[0], bounds[1], bounds[2]])
+        dialog = BoundsSelectorDialog(name.replace(".", " ") , default=[bounds[0], bounds[1], bounds[2]], parent=self)
         result = dialog.exec()
         
         if result:

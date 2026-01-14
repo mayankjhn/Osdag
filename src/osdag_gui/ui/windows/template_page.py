@@ -19,10 +19,11 @@ from osdag_gui.ui.components.dialogs.video_tutorials import TutorialsDialog
 from osdag_gui.ui.components.dialogs.ask_questions import AskQuestions
 from osdag_gui.ui.components.dialogs.about_osdag import AboutOsdagDialog
 from osdag_gui.common_functions import design_examples
+from osdag_gui.ui.components.dialogs.check_for_updates import UpdateDialog
 
 from osdag_core.Common import *
 
-from osdag_gui.ui.windows.design_preferences import AdditionalInputs
+from osdag_gui.ui.windows.additional_inputs import AdditionalInputs
 from osdag_core.cad.common_logic import CommonDesignLogic
 from osdag_gui.data.database.database_config import *
 
@@ -62,11 +63,12 @@ class CustomWindow(QWidget):
         self.backend.design_status = False
         self.backend.design_button_status = False
         self.fuse_model = None
+        self._pso_manager = None  # Lazy init for Plate Girder PSO UI management
         self.setObjectName("template_page")
 
         # This initializes the cad Window in specific backend 
         self.display, _ = self.init_display(backend_str=CAD_BACKEND)
-        self.designPrefDialog = AdditionalInputs(self.backend, self, input_dictionary=self.input_dock_inputs)
+        self.designPrefDialog = AdditionalInputs(self.backend, self, input_dictionary=self.input_dock_inputs, parent=self)
         self.designPrefDialog.ui.downloadDatabase.connect(self.downloadDatabase)
 
         self.init_ui(title)
@@ -80,6 +82,60 @@ class CustomWindow(QWidget):
         self.sidebar_animation.setDuration(150)
         self.sidebar.installEventFilter(self)
         self.sidebar.raise_()
+        
+    def closeEvent(self, event):
+        """Handle window close event with GC-safe OCC cleanup.
+        
+        THE KEY INSIGHT: gc.collect() forces Python to destroy C++ wrappers in 
+        arbitrary order, but OpenCascade's Handle system requires View→Context→Driver 
+        destruction order. By disabling GC during cleanup, we let reference counting 
+        naturally handle the correct destruction order when Qt deletes the widget.
+        """
+        import gc
+        
+        # CRITICAL: Disable GC during the entire sensitive cleanup window
+        # This prevents Python from freeing OCC objects in the wrong order
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+        
+        try:
+            # 1. Cleanup PSO resources
+            if hasattr(self, '_pso_manager') and self._pso_manager:
+                try:
+                    self._pso_manager.cleanup()
+                except Exception:
+                    pass
+
+            # 2. GC-SAFE OCC CLEANUP: Clear objects but DON'T force destruction
+            if hasattr(self, 'cad_widget') and self.cad_widget:
+                try:
+                    # Step A: Clear Python-side references (model_ais_objects, view_cube, etc)
+                    # This breaks Python reference cycles without touching OCC internals
+                    if hasattr(self.cad_widget, 'cleanup_for_new_model'):
+                        self.cad_widget.cleanup_for_new_model()
+                    
+                    # Step B: Tell OCC to release all displayed shapes from GPU memory
+                    # EraseAll() properly releases OpenGL resources
+                    if hasattr(self.cad_widget, '_display') and self.cad_widget._display:
+                        self.cad_widget._display.EraseAll()
+                    
+                    # DO NOT: call view.SetWindow(None) - corrupts driver state
+                    # DO NOT: set view/context = None - breaks OCC destruction order  
+                    # DO NOT: call gc.collect() - this is what causes the heap corruption!
+                    #
+                    # Qt's parent-child deletion will properly destroy the cad_widget,
+                    # which triggers qtViewer3d's destructor that knows the correct
+                    # cleanup sequence for OpenCascade's graphics pipeline.
+                    
+                except Exception as e:
+                    print(f"[WARNING] OCC cleanup: {e}")
+                    
+        finally:
+            # Re-enable GC after sensitive window (if it was enabled before)
+            if gc_was_enabled:
+                gc.enable()
+
+        super().closeEvent(event)
 
     #---------------------------------CAD-SETUP-START----------------------------------------------
 
@@ -544,6 +600,7 @@ class CustomWindow(QWidget):
         self._input_dock_default_width = input_dock_width
         self.splitter.addWidget(self.input_dock)
 
+
         central_widget = QWidget()
         central_H_layout = QHBoxLayout(central_widget)
 
@@ -750,6 +807,16 @@ class CustomWindow(QWidget):
         graphics_menu.addAction(side_view_action)
 
         graphics_menu.addSeparator()
+        
+        # Toggle Optimization Graphs (for Plate Girder PSO visualization)
+        self.toggle_opt_action = QAction("Show Optimization Graph", self)
+        self.toggle_opt_action.setShortcut(QKeySequence("Alt+G"))
+        self.toggle_opt_action.triggered.connect(self.toggle_optimization_view)
+        self.toggle_opt_action.setEnabled(False)  # Enabled after PSO runs
+        graphics_menu.addAction(self.toggle_opt_action)
+
+        graphics_menu.addSeparator()
+
 
         # Database Menu
         database_menu = self.menu_bar.addMenu("Database")
@@ -815,7 +882,7 @@ class CustomWindow(QWidget):
         help_menu.addSeparator()
 
         check_update_action = QAction("Check For Update", self)
-        check_update_action.triggered.connect(self.on_check_for_update)
+        check_update_action.triggered.connect(lambda: UpdateDialog().exec())
         help_menu.addAction(check_update_action)
 
     #----------------Function-Trigger-for-MenuBar-START----------------------------------------
@@ -894,16 +961,19 @@ class CustomWindow(QWidget):
             key = input_widget.findChild(QWidget, key_str)
             if op[2] == TYPE_COMBOBOX:
                 if key_str in uiObj.keys():
-                    index = key.findText(uiObj[key_str], Qt.MatchFixedString)
+                    val = uiObj[key_str]
+                    if isinstance(val, list):
+                        val = val[0] if len(val) > 0 else "All"
+                    index = key.findText(val, Qt.MatchFixedString)
                     if index >= 0:
                         key.setCurrentIndex(index)
                     else:
                         if key_str in [KEY_SUPTDSEC, KEY_SUPTNGSEC]:
                             self.load_input_error_message += \
-                                str(key_str) + ": (" + str(uiObj[key_str]) + ") - Select from available Sections! \n"
+                                str(key_str) + ": (" + str(val) + ") - Select from available Sections! \n"
                         else:
                             self.load_input_error_message += \
-                                str(key_str) + ": (" + str(uiObj[key_str]) + ") - Default Value Considered! \n"
+                                str(key_str) + ": (" + str(val) + ") - Default Value Considered! \n"
             elif op[2] == TYPE_TEXTBOX:
                 if key_str in uiObj.keys():
                     if key_str == KEY_SHEAR or key_str==KEY_AXIAL or key_str == KEY_MOMENT:
@@ -1024,30 +1094,7 @@ class CustomWindow(QWidget):
                 title="Warning",
                 text="Design Unsafe: 3D Model cannot be saved",
                 dialogType=MessageBoxType.Warning
-            ).exec()
-
-    # Save CAD Model in image formats(PNG,JPEG,BMP,TIFF)
-    def save_cadImages(self, main):
-        if main.design_status:
-            files_types = "PNG (*.png);;JPEG (*.jpeg);;TIFF (*.tiff);;BMP(*.bmp)"
-            filePath, _ = QFileDialog.getSaveFileName(self, 'Export', os.path.join(str(self.folder), "untitled.png"),
-                                                      files_types)
-            fName = str(filePath)
-            file_extension = fName.split(".")[-1]
-
-            if file_extension == 'png' or file_extension == 'jpeg' or file_extension == 'bmp' or file_extension == 'tiff':
-                self.display.ExportToImage(fName)
-                CustomMessageBox(
-                    title="Information",
-                    text="File saved",
-                    dialogType=MessageBoxType.About
-                ).exec()
-        else:
-            CustomMessageBox(
-                    title="Information",
-                    text="Design Unsafe: CAD image cannot be saved",
-                    dialogType=MessageBoxType.About
-                ).exec()    
+            ).exec()   
 
     # To change mode to Pan/Rotate using keyboard keys
     def assign_display_mode(self, mode):
@@ -1269,7 +1316,6 @@ class CustomWindow(QWidget):
                 self.input_dock_label.setVisible(False)
             else:
                 target_sizes[0] = 0
-                self.input_dock_label.setVisible(True)
             target_sizes[2] = sizes[2]
             remaining_width = total_width - target_sizes[0] - target_sizes[2]
             target_sizes[1] = max(0, remaining_width)
@@ -1304,6 +1350,8 @@ class CustomWindow(QWidget):
             duration=0,
             on_finished=after_anim
         )
+        if dock == 'input' and not show:
+            self.input_dock_label.setVisible(True)
 
     def animate_splitter_sizes(self, splitter, start_sizes, end_sizes, duration, on_finished=None):
         if duration <= 0:
@@ -1390,15 +1438,72 @@ class CustomWindow(QWidget):
     # This opens loading widget and execute Design
     def start_thread(self, data):
         # Use safety module for multiprocessing (already initialized at startup)
-        # This is safe to call multiple times - will be ignored if already set
         from osdag_gui.OS_safety_protocols import ensure_safe_startup
         ensure_safe_startup()
+        
+        # Ensure CAD widget is visible
+        self.cad_widget.show()
+        
+        # Check if this is Plate Girder with Optimized design type
+        module_name = self.backend.module_name()
+        is_plate_girder = module_name.upper() == "PLATE GIRDER"
+        
+        # Read design type from the actual input widget (combobox)
+        design_type = 'Unknown'
+        if is_plate_girder and hasattr(self, 'input_dock') and self.input_dock:
+            design_type_widget = self.input_dock.input_widget.findChild(QComboBox, 'Total.Design_Type')
+            if design_type_widget:
+                design_type = design_type_widget.currentText()
+        
+        is_optimized = design_type == 'Optimized'
+        
+        print(f"[DEBUG] module_name: '{module_name}', design_type: '{design_type}'")
+        print(f"[DEBUG] is_plate_girder: {is_plate_girder}, is_optimized: {is_optimized}")
+        
+        if is_plate_girder and is_optimized:
+            print("[DEBUG] → Using PSO Visualization (via PSOUIManager)")
+            # Lazy init PSOUIManager for Plate Girder module
+            if self._pso_manager is None:
+                from osdag_core.design_type.plate_girder.gui.pso_ui_manager import PSOUIManager
+                self._pso_manager = PSOUIManager(self)
+            else:
+                # Cleanup previous resources before new design
+                self._pso_manager.cleanup()
+            
+            # Use PSO visualization instead of loading popup
+            if not self._pso_manager.start_visualization(data):
+                # Fallback to standard design if visualization fails
+                self._run_standard_design(data)
+        else:
+            print("[DEBUG] → Using standard loading popup")
+            # Cleanup any previous PSO visualization
+            if self._pso_manager:
+                self._pso_manager.cleanup()
+            # Standard loading popup for all other modules
+            self._run_standard_design(data)
     
+    # NOTE: PSO visualization methods moved to osdag_core/design_type/plate_girder/gui/pso_ui_manager.py
+    # Methods removed: _start_pso_visualization, _restore_cad_from_pso, _show_pso_from_cad,
+    # _restore_initial_layout_for_plate_girder, _cleanup_pso_resources, _on_pso_complete
+    # Now delegated to self._pso_manager (PSOUIManager instance)
+    
+    def _run_standard_design(self, data):
+        """Run standard design flow with loading popup (for non-Plate Girder modules)."""
         self.loading = LoadingDialogManager(self.theme.is_light())
         self.loading.show()
         self.setEnabled(False)
         time.sleep(1)
         self.common_function_for_save_and_design(self.backend, data, "Design")
+    
+    def toggle_optimization_view(self):
+        """Toggle between PSO visualization and CAD view. 
+        Delegates to PSOUIManager for Plate Girder module.
+        """
+        if self._pso_manager:
+            self._pso_manager.toggle_view()
+        elif hasattr(self, 'cad_widget') and self.cad_widget:
+            # No PSO manager, just ensure CAD is shown
+            self.cad_widget.show()
     
     def finished_loading(self):
         # print("Custom Logger: ")
@@ -1586,7 +1691,7 @@ class CustomWindow(QWidget):
                                                   KEY_DISP_COLUMNENDPLATE, KEY_DISP_BCENDPLATE, KEY_DISP_BB_EP_SPLICE,
                                                   KEY_DISP_COMPRESSION_COLUMN,KEY_DISP_FLEXURE,KEY_DISP_FLEXURE2,KEY_DISP_FLEXURE3,KEY_DISP_FLEXURE4,
                                                   KEY_DISP_COMPRESSION_STRUT, KEY_DISP_STRUT_WELDED_END_GUSSET,KEY_DISP_LAPJOINTBOLTED,KEY_DISP_BUTTJOINTBOLTED, 
-                                                  KEY_DISP_LAPJOINTWELDED, KEY_DISP_BUTTJOINTWELDED]:
+                                                  KEY_DISP_LAPJOINTWELDED, KEY_DISP_BUTTJOINTWELDED, KEY_PLATE_GIRDER_MAIN_MODULE]:
                 # print(self.display, self.folder, main.module, main.mainmodule)
                 # print("[INFO] common start")
                 # print(f"[INFO] main object type: {type(main)}")
@@ -1605,20 +1710,15 @@ class CustomWindow(QWidget):
 
                 print("Hover Dictionary: ", main.hover_dict)
 
-                # CRITICAL: Garbage collect before heavy CAD operations to prevent heap corruption
-                # This is essential when creating 64+ OpenCASCADE shapes (bolts/nuts/welds)
-                gc.collect()
-                
-                # Process Qt events before OpenGL rendering to prevent segfault on Linux
-                from PySide6.QtWidgets import QApplication
-                QApplication.processEvents()
+                # NOTE: DO NOT call gc.collect() or processEvents() here!
+                # They force OCC wrapper cleanup in arbitrary order, causing heap corruption.
+                # The OCC memory manager and Qt event loop handle cleanup safely.
                 
                 # Ensure display is ready before 3D rendering
                 if self._is_display_ready():
                     try:
                         self.commLogicObj.call_3DModel(status, main)
-                        # Garbage collect after CAD operations to clean up OCC shapes
-                        gc.collect()
+                        # NOTE: DO NOT call gc.collect() after CAD operations!
                     except Exception as e:
                         print(f"[ERROR] 3D model rendering failed: {e}")
                 else:
@@ -1946,6 +2046,14 @@ class CustomWindow(QWidget):
     #--------------------Unlocking-Inputs-After-Design-Start-----------------------
     # Clear output fields
     def clear_output_fields(self):
+        # Flush PSO Visualization when inputs are unlocked/cleared
+        self._pso_manager.cleanup() if self._pso_manager else None
+        if hasattr(self, 'toggle_opt_action'):
+            self.toggle_opt_action.setEnabled(False)
+        self.cad_widget.show()
+        if hasattr(self, 'logs_dock') and self.logs_dock:
+            self.logs_dock.show()
+            
         # Reset the design status
         self.backend.design_status = False
         self.backend.design_button_status = False
@@ -1993,51 +2101,48 @@ class CustomWindow(QWidget):
     
     def _do_flush_cad_widget(self):
         """
-        Internal method that performs the actual CAD widget cleanup.
-        Uses the same safe cleanup order as display_3DModel in common_logic.py:
-        1. cleanup_for_new_model() FIRST - clears internal Python state
-        2. EraseAll() SECOND - clears OCC context  
-        3. gc.collect() at safe points
+        Internal method that performs GC-safe CAD widget cleanup.
         
-        This order is critical to prevent heap corruption.
+        KEY INSIGHT: We disable GC during cleanup to prevent Python from destroying
+        OCC C++ wrappers in arbitrary order. OpenCascade's Handle system requires
+        specific destruction ordering (View → Context → Driver).
         """
         if not hasattr(self, 'cad_widget') or not self.cad_widget:
             return
         
         import gc
         
-        # Step 1: Initial GC before any OCC operations
-        gc.collect()
+        # CRITICAL: Disable GC during cleanup to prevent wrong destruction order
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
         
-        # Step 2: Clear internal Python state FIRST (before OCC context operations)
-        # This clears model_ais_objects, hover labels, view_cube reference, etc.
-        # CRITICAL: Must happen BEFORE EraseAll to prevent double-free
-        if hasattr(self.cad_widget, 'cleanup_for_new_model'):
-            try:
-                self.cad_widget.cleanup_for_new_model()
-            except Exception as e:
-                print(f"[WARNING] Error in cleanup_for_new_model: {e}")
-        
-        # Step 3: GC after clearing internal state
-        gc.collect()
-        
-        # Step 4: Now safe to clear OCC context
-        if hasattr(self.cad_widget, '_display') and self.cad_widget._display:
-            try:
-                self.cad_widget._display.EraseAll()
-            except Exception as e:
-                print(f"[WARNING] Error erasing display: {e}")
-        
-        # Step 5: Final GC to clean up released OCC objects
-        gc.collect()
-        
-        # Step 6: Repaint to show empty view
-        if hasattr(self.cad_widget, '_display') and self.cad_widget._display:
-            try:
-                self.cad_widget._display.Repaint()
-            except Exception as e:
-                print(f"[WARNING] Error repainting display: {e}")
-
+        try:
+            # Step 1: Clear internal Python state (model_ais_objects, view_cube, etc)
+            # This breaks Python reference cycles without forcing C++ destruction
+            if hasattr(self.cad_widget, 'cleanup_for_new_model'):
+                try:
+                    self.cad_widget.cleanup_for_new_model()
+                except Exception as e:
+                    print(f"[WARNING] Error in cleanup_for_new_model: {e}")
+            
+            # Step 2: Tell OCC to release displayed shapes from GPU memory
+            if hasattr(self.cad_widget, '_display') and self.cad_widget._display:
+                try:
+                    self.cad_widget._display.EraseAll()
+                except Exception as e:
+                    print(f"[WARNING] Error erasing display: {e}")
+            
+            # Step 3: Repaint to show empty view
+            if hasattr(self.cad_widget, '_display') and self.cad_widget._display:
+                try:
+                    self.cad_widget._display.Repaint()
+                except Exception as e:
+                    print(f"[WARNING] Error repainting display: {e}")
+                    
+        finally:
+            # Re-enable GC after sensitive cleanup window
+            if gc_was_enabled:
+                gc.enable()
 
     # Error Message Box
     def show_error_msg(self, error):
@@ -2068,7 +2173,55 @@ class CustomWindow(QWidget):
 
         msg_box.finished.connect(lambda: setattr(self, '_error_dialog_open', False))
         msg_box.exec()
-        
+
+    #----------------------Cad-image-export-Start-----------------------
+    def save_cadImages(self, main):
+        """Save CAD model as raster image (PNG, JPEG, BMP, TIFF)"""
+
+        if not main.design_status:
+            CustomMessageBox(
+                title="Information",
+                text="Design Unsafe: CAD image cannot be saved",
+                dialogType=MessageBoxType.About
+            ).exec()
+            return
+
+        file_types = (
+            "PNG (*.png);;"
+            "JPEG (*.jpeg *.jpg);;"
+            "TIFF (*.tiff *.tif);;"
+            "BMP (*.bmp)"
+        )
+
+        filePath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export CAD Image",
+            os.path.join(str(self.folder), "cad.png"),
+            file_types
+        )
+
+        if not filePath:
+            return
+
+        _, ext = os.path.splitext(filePath)
+        ext = ext.lower()
+
+        if ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]:
+            self.display.ExportToImage(filePath)
+            CustomMessageBox(
+                title="Information",
+                text="File saved successfully",
+                dialogType=MessageBoxType.About
+            ).exec()
+        else:
+            CustomMessageBox(
+                title="Error",
+                text="Unsupported file format selected",
+                dialogType=MessageBoxType.Critical
+            ).exec()
+    #----------------------Cad-image-export-Start-----------------------
+
+      
 class InputDockIndicator(QWidget):
     def __init__(self, parent):
         super().__init__(parent)

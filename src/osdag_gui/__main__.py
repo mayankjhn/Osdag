@@ -20,8 +20,12 @@ ensure_safe_startup()
 # Now safe to import Qt and other modules
 # =============================================================================
 from PySide6.QtWidgets import QApplication, QMainWindow
-from PySide6.QtCore import QThread, Signal, QFile, QTextStream
+from PySide6.QtCore import Qt, QThread, Signal, QFile, QTextStream
 from PySide6.QtGui import QFontDatabase, QFont, QIcon
+
+# Disable native file dialogs globally to prevent OpenGL context conflicts
+# This is critical for Linux systems with Intel/Mesa graphics drivers
+QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True)
 from osdag_core.utils.internet_connectivity import InternetConnectivity
 from osdag_gui.ui.windows.launch_screen import OsdagLaunchScreen
 from osdag_gui.data.database.database_config import refactor_database, create_user_database
@@ -167,19 +171,16 @@ class LaunchScreenPopup(QMainWindow):
             self.on_finish()
 
 def GUI():
-    # const = {
-    #     'GREEN_LIGHT_MODE': '#90AF13',
-    #     'WHITE': '#FFFFFF',
-    #     'OFF_WHITE': '#F4F4F4',
-    #     'CONTROL_BTN_HOVER': '#D9D7D7',
-    #     'CONTROL_BTN_CLICK': '#CFCFCF',
-    #     'CLOSE_BTN_HOVER': '#E81123',
-    #     'CLOSE_BTN_CLICK': '#F1707A'
-    # }
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(":/images/osdag_logo.png"))
+    # Load bundled Ubuntu Sans font - works on all OS without needing font installed
     fid = QFontDatabase.addApplicationFont(":/fonts/UbuntuSans-Regular.ttf")
-    # font = QFontDatabase.applicationFontFamilies(fid)[0]
-    # app.setFont(QFont(font))
+    if fid != -1:
+        font_family = QFontDatabase.applicationFontFamilies(fid)[0]
+        app.setFont(QFont(font_family, 10))  # Set as default app font
+    else:
+        print("[WARNING] Failed to load Ubuntu Sans font from resources")
 
     app.theme_manager = ThemeManager(app)
     app.theme_manager.load_theme(app.theme_manager.current_theme)
@@ -225,7 +226,7 @@ Examples:\n
   osdag\n
   osdag-cli run -i TensionBolted.osi\n
   osdag-cli run -i TensionBolted.osi -t save_csv -o result.csv\n
-  osdag-cli run -i TensionBolted.osi -t save_pdf -o result.pdf\n
+  osdag-cli run -i TensionBolted.osi -t generate_report -o result.pdf\n
   osdag-cli run -i TensionBolted.osi -t print_result\n
 ==================================================\n
 """
@@ -261,7 +262,7 @@ def cli():
               required=True,
               help="Path to input file (.osi)")
 @click.option("-t", "--op_type", "op_type",
-              type=click.Choice(["save_csv", "save_pdf", "print_result"]),
+              type=click.Choice(["save_csv", "generate_report", "print_result"]),
               default="print_result",
               show_default=True,
               help="Type of operation")
